@@ -139,5 +139,12 @@ const Data = {
 };
 
 function statusLabel(status) {
-  return { open: "Open", in_progress: "In Progress", blocked: "Blocked", done: "Done" }[status] || status;
+    return {
+        new_request:"New Request",
+        needs_clarification:"Needs Clarification",
+        ready_to_assign:"Ready to Assign",
+        in_progress:"In Progress",
+        waiting_on_client:"Waiting on Client",
+        done:"Done"
+    }[status] || status;
 }
