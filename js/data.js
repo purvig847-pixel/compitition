@@ -43,7 +43,7 @@ const Data = {
       description,
       assignedTo,
       createdBy,
-      status: "new_request",
+      status: "open",
       priority,
       dueDate: dueDate ? firebase.firestore.Timestamp.fromDate(new Date(dueDate)) : null,
       createdAt: now,
@@ -139,12 +139,5 @@ const Data = {
 };
 
 function statusLabel(status) {
-    return {
-        new_request:"New Request",
-        needs_clarification:"Needs Clarification",
-        ready_to_assign:"Ready to Assign",
-        in_progress:"In Progress",
-        waiting_on_client:"Waiting on Client",
-        done:"Done"
-    }[status] || status;
+  return { open: "Open", in_progress: "In Progress", blocked: "Blocked", done: "Done" }[status] || status;
 }
