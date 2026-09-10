@@ -144,24 +144,10 @@ function relativeDate(date) {
   return `Due ${time}`;
 }
 
-function isOverdue(task){
-
-    if(!task.dueDate)
-        return false;
-
-    if(
-        task.status==="done" ||
-        task.status==="new_request" ||
-        task.status==="needs_clarification" ||
-        task.status==="waiting_on_client"
-    )
-        return false;
-
-    const d = task.dueDate.toDate
-        ? task.dueDate.toDate()
-        : new Date(task.dueDate);
-
-    return d < new Date();
+function isOverdue(task) {
+  if (!task.dueDate || task.status === "done") return false;
+  const d = task.dueDate.toDate ? task.dueDate.toDate() : new Date(task.dueDate);
+  return d < new Date();
 }
 
 function fmtTimestamp(ts) {
@@ -212,14 +198,7 @@ const TaskPanel = {
         <div class="panel-field">
           <label>Status</label>
           <select id="pf-status">
-            ${[
-"new_request",
-"needs_clarification",
-"ready_to_assign",
-"in_progress",
-"waiting_on_client",
-"done"
-].map(s =>
+            ${["open", "in_progress", "blocked", "done"].map(s =>
               `<option value="${s}" ${s === task.status ? "selected" : ""}>${statusLabel(s)}</option>`).join("")}
           </select>
         </div>
