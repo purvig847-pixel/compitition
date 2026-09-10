@@ -25,8 +25,14 @@ const Auth = {
   },
 
   async loadAccounts() {
-    const snap = await db.collection("users").get();
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Hardcoded accounts — no Firestore seeding needed.
+    // Add/remove/edit entries here to change who shows up on the login screen.
+    return [
+      { id: "admin1", name: "Manager", role: "admin",    avatarColor: "#FF7A29" },
+      { id: "rahul",  name: "Rahul",   role: "employee", avatarColor: "#5B9CFF" },
+      { id: "aman",   name: "Aman",    role: "employee", avatarColor: "#3DDC97" },
+      { id: "priya",  name: "Priya",   role: "employee", avatarColor: "#FFB627" }
+    ];
   },
 
   async renderLogin() {
