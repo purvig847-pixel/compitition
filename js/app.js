@@ -1,331 +1,321 @@
 /* ============================================================
-   LALA TECH — OPERATIONS
-   Design tokens + components
+   app.js — view router, init, shared helpers
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+const App = {
+  users: [],
+  usersById: {},
+  presence: {},
+  activeUnsubs: [],
+  currentView: null,
 
-:root {
-  --bg: #12151B;
-  --surface: #1B2029;
-  --surface-raised: #232A35;
-  --orange: #FF7A29;
-  --amber: #FFB627;
-  --blue: #5B9CFF;
-  --green: #3DDC97;
-  --red: #FF5470;
-  --text: #F2EFEA;
-  --text-muted: #8A93A6;
-  --border: #2A3140;
+  async init() {
+    const session = Auth.getSession();
+    if (session) {
+      Auth.currentUser = session;
+      this.boot();
+    } else {
+      document.getElementById("login-screen").classList.remove("hidden");
+      Auth.renderLogin();
+    }
+  },
 
-  --font-head: 'Space Grotesk', sans-serif;
-  --font-body: 'Inter', sans-serif;
-  --font-mono: 'IBM Plex Mono', monospace;
+  async boot() {
+    document.getElementById("login-screen").classList.add("hidden");
+    document.getElementById("app-shell").classList.remove("hidden");
 
-  --radius: 6px;
-  --sidebar-w: 220px;
+    Data.onUsers(list => {
+      this.users = list;
+      this.usersById = {};
+      list.forEach(u => (this.usersById[u.id] = u));
+    });
+
+    Data.onPresence(map => (this.presence = map));
+    Data.touchPresence(Auth.currentUser.id);
+    setInterval(() => Data.touchPresence(Auth.currentUser.id), 20000);
+
+    this.renderShell();
+    Automation.start();
+
+    const home = Auth.currentUser.role === "admin" ? "overview" : "my-tasks";
+    this.navigate(home);
+  },
+
+  renderShell() {
+    const user = Auth.currentUser;
+    const isAdmin = user.role === "admin";
+    const sidebar = document.getElementById("sidebar");
+
+    const employeeNav = [
+      ["my-tasks", "☰", "My Tasks"],
+      ["create-task", "✎", "Create Task"],
+      ["calendar", "▦", "Calendar"],
+      ["notifications", "◔", "Notifications"]
+    ];
+    const adminNav = [
+      ["overview", "◆", "Overview"],
+      ["all-tasks", "▤", "All Tasks"],
+      ["employees", "◎", "Employees"],
+      ["reports", "▲", "Reports"],
+      ["activity", "≡", "Activity"]
+    ];
+    const nav = isAdmin ? adminNav : employeeNav;
+
+    sidebar.innerHTML = `
+      <div class="brand-mark">LALA TECH — <span>OPS</span></div>
+      <nav id="nav-items"></nav>
+      <div id="sidebar-footer">
+        <div class="avatar" style="background:${user.avatarColor || '#5B9CFF'}">${initials(user.name)}</div>
+        <div class="who">
+          <div class="name">${user.name}</div>
+          <div class="role">${user.role}</div>
+        </div>
+        <button id="logout-btn">Log out</button>
+      </div>
+    `;
+    document.getElementById("logout-btn").onclick = () => Auth.logout();
+
+    const navEl = document.getElementById("nav-items");
+    nav.forEach(([id, icon, label]) => {
+      const item = document.createElement("button");
+      item.className = "nav-item";
+      item.dataset.view = id;
+      item.innerHTML = `<span class="icon">${icon}</span><span>${label}</span>${id === "notifications" ? '<span class="nav-badge hidden" id="notif-badge">0</span>' : ""}`;
+      item.onclick = () => this.navigate(id);
+      navEl.appendChild(item);
+    });
+
+    if (!isAdmin) {
+      Data.onNotifications(user.id, list => {
+        const unread = list.filter(n => !n.read).length;
+        const badge = document.getElementById("notif-badge");
+        if (badge) {
+          badge.textContent = unread;
+          badge.classList.toggle("hidden", unread === 0);
+        }
+      });
+    }
+
+    document.addEventListener("keydown", e => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+      if (e.key === "/") {
+        e.preventDefault();
+        const s = document.getElementById("search-input");
+        if (s) s.focus();
+      }
+      if (e.key === "n") {
+        const q = document.getElementById("quick-add-input");
+        if (q) { e.preventDefault(); q.focus(); }
+      }
+    });
+  },
+
+  navigate(view) {
+    this.currentView = view;
+    document.querySelectorAll(".nav-item").forEach(el => {
+      el.classList.toggle("active", el.dataset.view === view);
+    });
+    this.activeUnsubs.forEach(fn => fn && fn());
+    this.activeUnsubs = [];
+
+    const isAdmin = Auth.currentUser.role === "admin";
+    if (isAdmin) {
+      Admin.render(view);
+    } else {
+      Employee.render(view);
+    }
+  }
+};
+
+function initials(name) {
+  return name.split(" ").map(p => p[0]).join("").slice(0, 2).toUpperCase();
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
-
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-body);
-  font-size: 14px;
-  line-height: 1.5;
-  min-height: 100vh;
+function relativeDate(date) {
+  if (!date) return "No due date";
+  const d = date.toDate ? date.toDate() : new Date(date);
+  const now = new Date();
+  const startOfDay = x => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+  const diffDays = Math.round((startOfDay(d) - startOfDay(now)) / 86400000);
+  const time = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  if (diffDays < 0) return `Overdue · ${time}`;
+  if (diffDays === 0) return `Due today`;
+  if (diffDays === 1) return `Due tomorrow`;
+  return `Due ${time}`;
 }
 
-h1, h2, h3, .num-display { font-family: var(--font-head); font-weight: 600; }
-
-button {
-  font-family: var(--font-body);
-  cursor: pointer;
-  border: none;
-  background: none;
-  color: inherit;
+function isOverdue(task) {
+  if (!task.dueDate || task.status === "done") return false;
+  const d = task.dueDate.toDate ? task.dueDate.toDate() : new Date(task.dueDate);
+  return d < new Date();
 }
 
-input, select, textarea {
-  font-family: var(--font-body);
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: var(--radius);
-  padding: 8px 10px;
-  font-size: 14px;
+function fmtTimestamp(ts) {
+  if (!ts) return "";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
-input:focus, select:focus, textarea:focus { outline: 1px solid var(--orange); }
 
-.hidden { display: none !important; }
+function shortId(id) {
+  return "TSK-" + id.slice(0, 5).toUpperCase();
+}
 
-/* ---------- Login ---------- */
-#login-screen {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 28px;
+function toast(message, type = "info") {
+  const stack = document.getElementById("toast-stack");
+  const el = document.createElement("div");
+  el.className = `toast ${type}`;
+  el.textContent = message;
+  stack.appendChild(el);
+  setTimeout(() => el.remove(), 4500);
 }
-.brand-mark {
-  font-family: var(--font-head);
-  font-size: 15px;
-  letter-spacing: 3px;
-  color: var(--text-muted);
-}
-.brand-mark span { color: var(--orange); }
-#login-screen h1 { font-size: 28px; letter-spacing: 1px; }
-.account-grid {
-  display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
-  justify-content: center;
-  max-width: 520px;
-}
-.account-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 18px 22px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  min-width: 110px;
-  transition: border-color .15s, transform .1s;
-}
-.account-card:hover { border-color: var(--orange); transform: translateY(-2px); }
-.avatar {
-  width: 44px; height: 44px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--font-head); font-weight: 700; font-size: 16px; color: var(--bg);
-}
-.account-role { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
 
-/* ---------- App shell ---------- */
-#app-shell { display: flex; min-height: 100vh; }
+const NOTIF_ICON = { assigned: "→", due_soon: "◔", overdue: "⚠", completed: "✓" };
 
-#sidebar {
-  width: var(--sidebar-w);
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  padding: 18px 0;
-}
-#sidebar .brand-mark { padding: 0 20px 20px; }
-.nav-item {
-  display: flex; align-items: center; gap: 12px;
-  padding: 11px 20px;
-  color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 500;
-  border-left: 3px solid transparent;
-  position: relative;
-}
-.nav-item:hover { color: var(--text); background: var(--surface-raised); }
-.nav-item.active { color: var(--text); border-left-color: var(--orange); background: var(--surface-raised); }
-.nav-item .icon { font-size: 15px; width: 18px; text-align: center; }
-.nav-badge {
-  margin-left: auto; background: var(--red); color: white;
-  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px;
-}
-#sidebar-footer {
-  margin-top: auto; padding: 14px 20px; border-top: 1px solid var(--border);
-  display: flex; align-items: center; gap: 10px;
-}
-#sidebar-footer .avatar { width: 32px; height: 32px; font-size: 13px; }
-#sidebar-footer .who { display: flex; flex-direction: column; }
-#sidebar-footer .name { font-size: 13px; font-weight: 600; }
-#sidebar-footer .role { font-size: 11px; color: var(--text-muted); }
-#logout-btn { margin-left: auto; color: var(--text-muted); font-size: 12px; }
-#logout-btn:hover { color: var(--red); }
+/* ---------- Shared task detail panel (used by admin + employee) ---------- */
+const TaskPanel = {
+  unsubComments: null,
 
-#main {
-  flex: 1;
-  padding: 26px 32px 60px;
-  overflow-y: auto;
-  max-width: 1200px;
+  open(task, opts = {}) {
+    const isAdmin = Auth.currentUser.role === "admin";
+    const overlay = document.createElement("div");
+    overlay.className = "overlay";
+    overlay.id = "task-overlay";
+
+    const assigneeOptions = App.users.map(u =>
+      `<option value="${u.id}" ${u.id === task.assignedTo ? "selected" : ""}>${u.name}</option>`).join("");
+
+    overlay.innerHTML = `
+      <div class="panel">
+        <button class="panel-close">✕</button>
+        <h2>${escapeHtml(task.title)}</h2>
+        <div class="panel-id">${shortId(task.id)} · created ${fmtTimestamp(task.createdAt)}</div>
+
+        <div class="panel-field">
+          <label>Description</label>
+          <textarea id="pf-desc">${escapeHtml(task.description || "")}</textarea>
+        </div>
+
+        <div class="panel-field">
+          <label>Status</label>
+          <select id="pf-status">
+            ${["open", "in_progress", "blocked", "done"].map(s =>
+              `<option value="${s}" ${s === task.status ? "selected" : ""}>${statusLabel(s)}</option>`).join("")}
+          </select>
+        </div>
+
+        <div class="panel-field">
+          <label>Priority</label>
+          <select id="pf-priority">
+            ${["low", "medium", "high"].map(p =>
+              `<option value="${p}" ${p === task.priority ? "selected" : ""}>${p}</option>`).join("")}
+          </select>
+        </div>
+
+        <div class="panel-field">
+          <label>Due date</label>
+          <input type="date" id="pf-due" value="${task.dueDate ? toDateInputValue(task.dueDate) : ""}">
+        </div>
+
+        ${isAdmin ? `
+        <div class="panel-field">
+          <label>Assigned to</label>
+          <select id="pf-assignee">${assigneeOptions}</select>
+        </div>` : ""}
+
+        <div class="panel-actions">
+          <button class="btn btn-primary" id="pf-save">Save changes</button>
+          ${task.status !== "done" ? `<button class="btn btn-ghost" id="pf-complete">✓ Mark complete</button>` : ""}
+        </div>
+
+        <div class="panel-field">
+          <label>Comments</label>
+          <div class="comments-list" id="pf-comments"></div>
+          <div class="comment-add">
+            <input type="text" id="pf-comment-input" placeholder="Add a comment…">
+            <button class="btn btn-ghost" id="pf-comment-send">Send</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.querySelector(".panel-close").onclick = () => this.close();
+    overlay.addEventListener("click", e => { if (e.target === overlay) this.close(); });
+
+    overlay.querySelector("#pf-save").onclick = async () => {
+      const fields = {
+        description: overlay.querySelector("#pf-desc").value,
+        status: overlay.querySelector("#pf-status").value,
+        priority: overlay.querySelector("#pf-priority").value,
+        dueDate: overlay.querySelector("#pf-due").value
+          ? firebase.firestore.Timestamp.fromDate(new Date(overlay.querySelector("#pf-due").value))
+          : null
+      };
+      if (isAdmin) {
+        const newAssignee = overlay.querySelector("#pf-assignee").value;
+        if (newAssignee !== task.assignedTo) {
+          await Data.reassignTask(task.id, newAssignee, Auth.currentUser.id, task.title);
+        }
+      }
+      if (fields.status !== task.status) {
+        await Data.updateTaskStatus(task.id, fields.status, Auth.currentUser.id, task.title);
+        delete fields.status;
+      }
+      await Data.updateTask(task.id, fields, Auth.currentUser.id, `updated "${task.title}"`);
+      toast("Task updated");
+      this.close();
+    };
+
+    const completeBtn = overlay.querySelector("#pf-complete");
+    if (completeBtn) {
+      completeBtn.onclick = async () => {
+        await Data.updateTaskStatus(task.id, "done", Auth.currentUser.id, task.title);
+        toast(`"${task.title}" marked complete`, "completed");
+        this.close();
+      };
+    }
+
+    overlay.querySelector("#pf-comment-send").onclick = async () => {
+      const input = overlay.querySelector("#pf-comment-input");
+      const text = input.value.trim();
+      if (!text) return;
+      await Data.addComment(task.id, Auth.currentUser.id, text);
+      input.value = "";
+    };
+    overlay.querySelector("#pf-comment-input").addEventListener("keydown", e => {
+      if (e.key === "Enter") overlay.querySelector("#pf-comment-send").click();
+    });
+
+    this.unsubComments = Data.onComments(task.id, comments => {
+      const list = overlay.querySelector("#pf-comments");
+      if (!list) return;
+      list.innerHTML = comments.length ? comments.map(c => `
+        <div class="comment">
+          <span class="author">${App.usersById[c.authorId] ? App.usersById[c.authorId].name : "Someone"}</span>
+          <span class="time">${fmtTimestamp(c.createdAt)}</span>
+          <div>${escapeHtml(c.text)}</div>
+        </div>
+      `).join("") : `<div class="empty-state" style="padding:10px 0;">No comments yet</div>`;
+      list.scrollTop = list.scrollHeight;
+    });
+  },
+
+  close() {
+    if (this.unsubComments) this.unsubComments();
+    const overlay = document.getElementById("task-overlay");
+    if (overlay) overlay.remove();
+  }
+};
+
+function toDateInputValue(ts) {
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toISOString().slice(0, 10);
 }
-#main h1 { font-size: 22px; margin-bottom: 4px; }
-.page-sub { color: var(--text-muted); font-size: 13px; margin-bottom: 22px; }
 
-/* ---------- Pulse bar ---------- */
-.pulse-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 26px; }
-.pulse-stat {
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 16px 18px; position: relative; overflow: hidden;
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str || "";
+  return div.innerHTML;
 }
-.pulse-stat .num-display { font-size: 30px; }
-.pulse-stat .label { color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .5px; margin-top: 2px; }
-.pulse-stat.overdue-active {
-  border-color: var(--red);
-  animation: pulseGlow 2s ease-in-out infinite;
-}
-@keyframes pulseGlow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255,84,112,0.0); }
-  50% { box-shadow: 0 0 18px 2px rgba(255,84,112,0.35); }
-}
-.pulse-stat.overdue-active .num-display { color: var(--red); }
 
-/* ---------- Digest card ---------- */
-.digest-card {
-  background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--orange);
-  border-radius: var(--radius); padding: 12px 16px; margin-bottom: 22px; font-size: 13px; color: var(--text-muted);
-}
-.digest-card strong { color: var(--text); }
-
-/* ---------- Quick add ---------- */
-.quick-add {
-  display: flex; gap: 8px; margin-bottom: 20px;
-}
-.quick-add input { flex: 1; }
-.quick-add button {
-  background: var(--orange); color: var(--bg); font-weight: 600; padding: 8px 18px; border-radius: var(--radius);
-}
-.quick-add button:hover { filter: brightness(1.08); }
-
-/* ---------- Kanban ---------- */
-.kanban { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-.kanban-col {
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 12px; min-height: 300px;
-}
-.kanban-col h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 10px; }
-.kanban-col.drag-over { border-color: var(--orange); }
-
-.task-card {
-  background: var(--surface-raised); border-radius: var(--radius); padding: 10px 12px 10px 14px;
-  margin-bottom: 10px; border-left: 3px solid var(--blue); cursor: pointer;
-  transition: transform .12s;
-}
-.task-card:hover { transform: translateX(2px); }
-.task-card.status-open { border-left-color: var(--blue); }
-.task-card.status-in_progress { border-left-color: var(--amber); }
-.task-card.status-blocked { border-left-color: var(--red); }
-.task-card.status-done { border-left-color: var(--green); }
-.task-card.overdue { border-left-color: var(--red); }
-.task-card .title { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
-.task-card .meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-muted); }
-.priority-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
-.priority-dot.high { background: var(--red); }
-.priority-dot.medium { background: var(--amber); }
-.priority-dot.low { background: var(--blue); }
-.task-card.leaving { animation: cardLeave .35s forwards; }
-@keyframes cardLeave { to { opacity: 0; transform: translateX(30px) scale(.9); } }
-
-/* ---------- Table ---------- */
-.table-toolbar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
-.table-toolbar select, .table-toolbar input { font-size: 12px; }
-table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: var(--radius); overflow: hidden; }
-thead th {
-  text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted);
-  padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none;
-}
-thead th:hover { color: var(--text); }
-tbody td { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
-tbody tr { cursor: pointer; }
-tbody tr:hover { background: var(--surface-raised); }
-tbody tr:last-child td { border-bottom: none; }
-.status-stripe-cell { display: flex; align-items: center; gap: 8px; }
-.status-stripe { width: 4px; height: 16px; border-radius: 2px; display: inline-block; }
-.status-stripe.status-open { background: var(--blue); }
-.status-stripe.status-in_progress { background: var(--amber); }
-.status-stripe.status-blocked { background: var(--red); }
-.status-stripe.status-done { background: var(--green); }
-.status-stripe.overdue { background: var(--red); }
-
-/* ---------- Employees grid ---------- */
-.employee-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap: 14px; }
-.employee-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
-.employee-card .top { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-.employee-card .name { font-weight: 600; font-size: 14px; }
-.presence-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
-.presence-dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
-.employee-stat-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); padding: 3px 0; }
-.employee-stat-row b { color: var(--text); }
-
-/* ---------- Reports ---------- */
-.report-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
-.report-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
-.report-card h3 { font-size: 13px; color: var(--text-muted); margin-bottom: 14px; text-transform: uppercase; letter-spacing: .5px; }
-.avg-stat { font-family: var(--font-head); font-size: 40px; color: var(--orange); }
-
-/* ---------- Activity feed ---------- */
-.activity-item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-.activity-item:last-child { border-bottom: none; }
-.activity-time { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-.activity-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--orange); margin-top: 6px; flex-shrink: 0; }
-
-/* ---------- Calendar ---------- */
-.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
-.cal-head { font-size: 11px; color: var(--text-muted); text-align: center; padding-bottom: 6px; text-transform: uppercase; }
-.cal-cell { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); min-height: 78px; padding: 6px; font-size: 11px; }
-.cal-cell.empty { background: transparent; border: none; }
-.cal-cell .daynum { color: var(--text-muted); margin-bottom: 4px; }
-.cal-task { background: var(--surface-raised); border-left: 2px solid var(--blue); border-radius: 3px; padding: 2px 5px; margin-bottom: 3px; font-size: 10px; }
-.cal-task.overdue { border-left-color: var(--red); }
-
-/* ---------- Notifications list ---------- */
-.notif-item { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
-.notif-item.unread { background: var(--surface-raised); }
-.notif-item:first-child { border-radius: var(--radius) var(--radius) 0 0; }
-.notif-item:last-child { border-radius: 0 0 var(--radius) var(--radius); border-bottom: none; }
-.notif-icon { font-size: 15px; margin-top: 1px; }
-.notif-text { font-size: 13px; }
-.notif-time { font-size: 11px; color: var(--text-muted); margin-top: 2px; font-family: var(--font-mono); }
-
-/* ---------- Detail panel (modal) ---------- */
-.overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 100;
-}
-.panel {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; width: 480px; max-width: 92vw;
-  max-height: 86vh; overflow-y: auto; padding: 22px;
-}
-.panel-close { float: right; color: var(--text-muted); font-size: 18px; }
-.panel-close:hover { color: var(--text); }
-.panel h2 { font-size: 17px; margin-bottom: 4px; }
-.panel-id { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); margin-bottom: 16px; }
-.panel-field { margin-bottom: 14px; }
-.panel-field label { display: block; font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 5px; }
-.panel-field select, .panel-field input, .panel-field textarea { width: 100%; }
-.panel-field textarea { resize: vertical; min-height: 60px; }
-.panel-actions { display: flex; gap: 8px; margin: 16px 0; }
-.btn { padding: 8px 14px; border-radius: var(--radius); font-size: 13px; font-weight: 600; }
-.btn-primary { background: var(--orange); color: var(--bg); }
-.btn-primary:hover { filter: brightness(1.08); }
-.btn-ghost { background: var(--surface-raised); color: var(--text); border: 1px solid var(--border); }
-.btn-ghost:hover { border-color: var(--orange); }
-.comments-list { margin-top: 6px; margin-bottom: 10px; max-height: 160px; overflow-y: auto; }
-.comment { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
-.comment:last-child { border-bottom: none; }
-.comment .author { font-weight: 600; color: var(--orange); margin-right: 6px; }
-.comment .time { color: var(--text-muted); font-family: var(--font-mono); font-size: 10px; }
-.comment-add { display: flex; gap: 6px; }
-.comment-add input { flex: 1; }
-
-/* ---------- Toast ---------- */
-#toast-stack { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 200; }
-.toast {
-  background: var(--surface-raised); border-left: 3px solid var(--orange); border-radius: var(--radius);
-  padding: 10px 16px; font-size: 13px; min-width: 240px; box-shadow: 0 6px 18px rgba(0,0,0,.4);
-  animation: toastIn .25s ease-out;
-}
-.toast.overdue { border-left-color: var(--red); }
-.toast.completed { border-left-color: var(--green); }
-@keyframes toastIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-
-/* ---------- Empty states ---------- */
-.empty-state { text-align: center; color: var(--text-muted); padding: 40px 0; font-size: 13px; }
-
-@media (max-width: 900px) {
-  #app-shell { flex-direction: column; }
-  #sidebar { width: 100%; flex-direction: row; overflow-x: auto; padding: 10px; }
-  .kanban { grid-template-columns: 1fr; }
-  .pulse-bar { grid-template-columns: repeat(2,1fr); }
-  .report-grid { grid-template-columns: 1fr; }
-}
+window.addEventListener("DOMContentLoaded", () => App.init());
