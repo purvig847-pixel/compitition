@@ -19,8 +19,7 @@ const Automation = {
 
   async sweep() {
     try {
-      const snap = await db.collection("tasks").ready_to_assign
-in_progress.get();
+      const snap = await db.collection("tasks").where("status", "!=", "done").get();
       const now = new Date();
       const admins = (await Data.getUsers()).filter(u => u.role === "admin");
 
