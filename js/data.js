@@ -5,14 +5,14 @@
 const Data = {
   // ---------- Users ----------
   async getUsers() {
-    const snap = await db.collection("users").get();
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    return Auth.loadAccounts();
   },
 
   onUsers(cb) {
-    return db.collection("users").onSnapshot(snap => {
-      cb(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
+    // Static hardcoded accounts (see Auth.loadAccounts in auth.js) —
+    // no live listener needed since this list doesn't change.
+    Auth.loadAccounts().then(cb);
+    return () => {}; // no-op unsubscribe, kept for API compatibility
   },
 
   async touchPresence(userId) {
