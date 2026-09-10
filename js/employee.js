@@ -20,12 +20,7 @@ const Employee = {
         <button id="quick-add-btn">Add</button>
       </div>
       <div class="kanban" id="kanban-board">
-        ${[
-"ready_to_assign",
-"in_progress",
-"waiting_on_client",
-"done"
-].map(s => `
+        ${["open", "in_progress", "blocked", "done"].map(s => `
           <div class="kanban-col" data-status="${s}">
             <h3>${statusLabel(s)}</h3>
             <div class="kanban-cards" id="col-${s}"></div>
@@ -48,12 +43,7 @@ const Employee = {
 
     const unsub = Data.onTasks(all => {
       const mine = all.filter(t => t.assignedTo === Auth.currentUser.id);
-      [[
-"ready_to_assign",
-"in_progress",
-"waiting_on_client",
-"done"
-].forEach(status => {
+      ["open", "in_progress", "blocked", "done"].forEach(status => {
         const col = document.getElementById(`col-${status}`);
         if (!col) return;
         const items = mine.filter(t => t.status === status);
