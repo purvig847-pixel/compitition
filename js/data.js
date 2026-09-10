@@ -43,7 +43,7 @@ const Data = {
       description,
       assignedTo,
       createdBy,
-      status: "open",
+      status: "new_request",
       priority,
       dueDate: dueDate ? firebase.firestore.Timestamp.fromDate(new Date(dueDate)) : null,
       createdAt: now,
